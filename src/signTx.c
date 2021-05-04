@@ -1,5 +1,6 @@
 #include "signTx.h"
 #include "state.h"
+#include "bech32.h"
 #include "cardano.h"
 #include "addressUtilsByron.h"
 #include "addressUtilsShelley.h"
@@ -945,30 +946,30 @@ static void signTx_handleCertificate_ui_runStep()
 	UI_STEP_BEGIN(ctx->ui_step, this_fn);
 
 	UI_STEP(HANDLE_CERTIFICATE_STEP_DISPLAY_OPERATION) {
-		char title[50];
-		explicit_bzero(title, SIZEOF(title));
-		char details[200];
-		explicit_bzero(details, SIZEOF(details));
-
 		switch (txBodyCtx->stageData.certificate.type) {
 		case CERTIFICATE_TYPE_STAKE_REGISTRATION:
-			snprintf(title, SIZEOF(title), "Register");
-			snprintf(details, SIZEOF(details), "staking key");
+			ui_displayPaginatedText(
+			        "Register",
+			        "staking key",
+			        this_fn
+			);
 			break;
 
 		case CERTIFICATE_TYPE_STAKE_DEREGISTRATION:
-			snprintf(title, SIZEOF(title), "Deregister");
-			snprintf(details, SIZEOF(details), "staking key");
+			ui_displayPaginatedText(
+			        "Deregister",
+			        "staking key",
+			        this_fn
+			);
 			break;
 
 		case CERTIFICATE_TYPE_STAKE_DELEGATION:
-			snprintf(title, SIZEOF(title), "Delegate stake to pool");
-			size_t length = encode_hex(
-			                        txBodyCtx->stageData.certificate.poolKeyHash, SIZEOF(txBodyCtx->stageData.certificate.poolKeyHash),
-			                        details, SIZEOF(details)
-			                );
-			ASSERT(length == strlen(details));
-			ASSERT(length == 2 * SIZEOF(txBodyCtx->stageData.certificate.poolKeyHash));
+			ui_displayBech32Screen(
+			        "Delegate stake to",
+			        "pool",
+			        txBodyCtx->stageData.certificate.poolKeyHash, SIZEOF(txBodyCtx->stageData.certificate.poolKeyHash),
+			        this_fn
+			);
 			break;
 
 		default:
@@ -977,12 +978,6 @@ static void signTx_handleCertificate_ui_runStep()
 			// which have separate UI; this handler must not be used
 			ASSERT(false);
 		}
-
-		ui_displayPaginatedText(
-		        title,
-		        details,
-		        this_fn
-		);
 	}
 	UI_STEP(HANDLE_CERTIFICATE_STEP_DISPLAY_STAKING_KEY) {
 		ui_displayPathScreen(
