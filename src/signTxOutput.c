@@ -367,6 +367,27 @@ static void signTxOutput_handleAssetGroup_ui_runStep()
 	UI_STEP_END(HANDLE_ASSET_GROUP_STEP_INVALID);
 }
 
+static int signTxOutput_lexiCompareViews(read_view_t lhs, read_view_t rhs)
+{
+	view_check(&lhs);
+	view_check(&rhs);
+	PRINTF("    lexi 0\n");
+	if(view_remainingSize(&lhs) != view_remainingSize(&rhs)) {
+		return view_remainingSize(&lhs) - view_remainingSize(&rhs);
+	}
+	PRINTF("    lexi 1 %d %d\n", view_remainingSize(&lhs), view_remainingSize(&rhs));
+	for(size_t i = 0; i < view_remainingSize(&lhs); ++i) {
+		//TODO do I need parse_u1be? is it big endian?
+	PRINTF("    lexi 1 %d %d\n", (int)(*lhs.ptr), (int)(*rhs.ptr));
+		if(*lhs.ptr != *rhs.ptr) {
+			return *lhs.ptr - *rhs.ptr;
+		}
+		view_skipBytes(&lhs, 1);
+		view_skipBytes(&rhs, 1);
+	}
+	return 0;
+}
+
 static void signTxOutput_handleAssetGroupAPDU(uint8_t* wireDataBuffer, size_t wireDataSize)
 {
 	{
@@ -384,6 +405,12 @@ static void signTxOutput_handleAssetGroupAPDU(uint8_t* wireDataBuffer, size_t wi
 
 		VALIDATE(view_remainingSize(&view) >= MINTING_POLICY_ID_SIZE, ERR_INVALID_DATA);
 		STATIC_ASSERT(SIZEOF(tokenGroup->policyId) == MINTING_POLICY_ID_SIZE, "wrong policy id size");
+		PRINTF("scrp 1 >%.*H<\n", wireDataSize, wireDataBuffer);
+		VALIDATE(signTxOutput_lexiCompareViews(
+			make_read_view(tokenGroup->policyId, tokenGroup->policyId + sizeof(tokenGroup->policyId)),
+			make_read_view(wireDataBuffer, wireDataBuffer + wireDataSize)
+			) < 0, ERR_INVALID_DATA);
+		PRINTF("scrp 2\n");
 		view_memmove(tokenGroup->policyId, &view, MINTING_POLICY_ID_SIZE);
 
 		VALIDATE(view_remainingSize(&view) == 4, ERR_INVALID_DATA);
@@ -404,6 +431,7 @@ static void signTxOutput_handleAssetGroupAPDU(uint8_t* wireDataBuffer, size_t wi
 		);
 		TRACE();
 	}
+	subctx->stateData.token.assetNameSize = ASSET_NAME_SIZE_MAX + 1;	//maybe turn it into a signed number and use -1? takes up too much space anyways
 
 	subctx->ui_step = HANDLE_ASSET_GROUP_STEP_RESPOND;
 	signTxOutput_handleAssetGroup_ui_runStep();
@@ -468,10 +496,20 @@ static void signTxOutput_handleTokenAPDU(uint8_t* wireDataBuffer, size_t wireDat
 		read_view_t view = make_read_view(wireDataBuffer, wireDataBuffer + wireDataSize);
 
 		VALIDATE(view_remainingSize(&view) >= 4, ERR_INVALID_DATA);
-		token->assetNameSize = parse_u4be(&view);
+		const size_t newAssetNameSize = parse_u4be(&view);
+		PRINTF("  asst 1 >%.*H<\n", wireDataSize, wireDataBuffer);
+		PRINTF("  asst 2 >%d<\n", token->assetNameSize);
+		VALIDATE(ASSET_NAME_SIZE_MAX + 1 == token->assetNameSize || signTxOutput_lexiCompareViews(
+			make_read_view(token->assetNameBytes, token->assetNameBytes + token->assetNameSize),
+			make_read_view(wireDataBuffer + 4, wireDataBuffer + 4 + newAssetNameSize)
+			) < 0, ERR_INVALID_DATA);	//TODO should be STATE?
+		PRINTF("  asst 3\n");
+		token->assetNameSize = newAssetNameSize;
 		VALIDATE(token->assetNameSize <= ASSET_NAME_SIZE_MAX, ERR_INVALID_DATA);
 
 		ASSERT(token->assetNameSize <= SIZEOF(token->assetNameBytes));
+
+
 		view_memmove(token->assetNameBytes, &view, token->assetNameSize);
 
 		VALIDATE(view_remainingSize(&view) == 8, ERR_INVALID_DATA);
